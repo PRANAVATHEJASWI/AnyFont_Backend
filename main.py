@@ -317,14 +317,16 @@ async def convert_file(
             detail=f"File processing failed: {exc}",
         ) from exc
 
-    return FileConvertResponse(
-        result=out["result"],
-        source_type=out["source_type"],
-        file_type=file_type,
-        metadata=metadata,
-        segments=out["segments"],
-        confidence=out["confidence"],
-    )
+        clean_metadata = {k: v for k, v in metadata.items() if k != "text"}
+
+        return FileConvertResponse(
+            result=out["result"],
+            source_type=out["source_type"],
+            file_type=file_type,
+            metadata=clean_metadata,
+            segments=out["segments"],
+            confidence=out["confidence"],
+        )
 
 
 # ---------------------------------------------------------------------------
