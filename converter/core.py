@@ -33,48 +33,32 @@ from .nudi_mappings import (
 from .detection import detect_encoding_type, segment_by_encoding
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Pre-compiled high-performance substitution engines
 # ---------------------------------------------------------------------------
+
+# 1. Nudi -> Unicode Map & Regex
+_N2U_MAP: dict[str, str] = dict(NUDI_TO_UNICODE)
+for _nudi_seq, _uni_seq in NUDI_SPECIAL_SEQUENCES:
+    _N2U_MAP[_nudi_seq] = _uni_seq
+_N2U_KEYS_SORTED = sorted(_N2U_MAP.keys(), key=lambda k: -len(k))
+_N2U_REGEX = re.compile("|".join(re.escape(k) for k in _N2U_KEYS_SORTED))
+
+# 2. Unicode -> Nudi Map & Regex
+_U2N_MAP: dict[str, str] = dict(UNICODE_TO_NUDI)
+for _nudi_seq, _uni_seq in NUDI_SPECIAL_SEQUENCES:
+    _U2N_MAP[_uni_seq] = _nudi_seq
+_U2N_KEYS_SORTED = sorted(_U2N_MAP.keys(), key=lambda k: -len(k))
+_U2N_REGEX = re.compile("|".join(re.escape(k) for k in _U2N_KEYS_SORTED))
 
 # Characters that are pre-base in Nudi (appear before the consonant in the
 # byte stream but after it in Unicode).
 _PRE_BASE_NUDI = frozenset(["{", "|"])
 
-# Unicode equivalents of the pre-base matras
-_I_MATRA  = "ಿ"   # U+0CBF
-_II_MATRA = "ೀ"   # U+0CC0
-
 # Regex that matches a pre-base matra immediately followed by a Kannada
 # Unicode consonant (after the first substitution pass).
-# Consonants land in U+0C95–U+0CB9 / U+0CDE / U+0CE0–U+0CE1
 _PREBASE_REORDER_RE = re.compile(
     r"([ಿೀ])([\u0C95-\u0CB9\u0CDE\u0CE0\u0CE1])"
 )
-
-
-def _apply_longest_match(text: str, mapping: dict[str, str], specials: list[tuple[str, str]]) -> str:
-    """
-    Substitute all occurrences of keys in *mapping* (and *specials*) in
-    *text* using longest-first greedy matching.
-    """
-    result: list[str] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        matched = False
-        # Try special sequences first (already sorted longest-first)
-        for nudi_seq, uni_str in specials:
-            seq_len = len(nudi_seq)
-            if text[i:i + seq_len] == nudi_seq:
-                result.append(uni_str)
-                i += seq_len
-                matched = True
-                break
-        if not matched:
-            ch = text[i]
-            result.append(mapping.get(ch, ch))
-            i += 1
-    return "".join(result)
 
 
 def _reorder_pre_base_matras(text: str) -> str:
@@ -91,18 +75,13 @@ def _reorder_pre_base_matras(text: str) -> str:
 
 def nudi_to_unicode(text: str) -> str:
     """
-    Convert Nudi-encoded *text* to Unicode Kannada.
-
-    Steps:
-    1. Apply longest-match substitution using NUDI_SPECIAL_SEQUENCES +
-       NUDI_TO_UNICODE character map.
-    2. Reorder any pre-base matras that ended up before their base consonant.
+    Convert Nudi-encoded *text* to Unicode Kannada in sub-second time.
     """
     if not text:
         return text
 
-    # Step 1 – character substitution
-    converted = _apply_longest_match(text, NUDI_TO_UNICODE, NUDI_SPECIAL_SEQUENCES)
+    # Step 1 – fast regex substitution
+    converted = _N2U_REGEX.sub(lambda m: _N2U_MAP[m.group(0)], text)
 
     # Step 2 – pre-base matra reordering
     converted = _reorder_pre_base_matras(converted)
@@ -112,45 +91,12 @@ def nudi_to_unicode(text: str) -> str:
 
 def unicode_to_nudi(text: str) -> str:
     """
-    Convert Unicode Kannada *text* to Nudi encoding.
-
-    For multi-character Unicode entries (e.g. 'ಅಂ') we try the longest
-    Unicode key first so that combined forms are translated as a unit.
+    Convert Unicode Kannada *text* to Nudi encoding in sub-second time.
     """
     if not text:
         return text
 
-    # Build reverse special sequences (unicode → nudi) sorted longest-first
-    rev_specials: list[tuple[str, str]] = sorted(
-        [(uni, nudi) for nudi, uni in NUDI_SPECIAL_SEQUENCES],
-        key=lambda t: -len(t[0]),
-    )
-
-    result: list[str] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        matched = False
-        # Try special sequences
-        for uni_seq, nudi_str in rev_specials:
-            seq_len = len(uni_seq)
-            if text[i:i + seq_len] == uni_seq:
-                result.append(nudi_str)
-                i += seq_len
-                matched = True
-                break
-        if not matched:
-            ch = text[i]
-            # Also handle the two-char Unicode entries in UNICODE_TO_NUDI
-            # (e.g. 'ಅಂ') by checking two-char window first
-            two = text[i:i + 2]
-            if two in UNICODE_TO_NUDI:
-                result.append(UNICODE_TO_NUDI[two])
-                i += 2
-            else:
-                result.append(UNICODE_TO_NUDI.get(ch, ch))
-                i += 1
-    return "".join(result)
+    return _U2N_REGEX.sub(lambda m: _U2N_MAP[m.group(0)], text)
 
 
 def auto_convert_to_nudi(text: str) -> dict[str, Any]:

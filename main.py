@@ -156,30 +156,36 @@ def _run_conversion(
             out = auto_convert_to_nudi(text)
         else:
             out = auto_convert_to_unicode(text)
+
+        raw_segments = out.get("segments", [])
+        safe_segments = raw_segments[:100] if len(raw_segments) > 100 else raw_segments
+
         return {
             "result":      out["converted"],
             "source_type": out["source_type"],
             "confidence":  out["confidence"],
-            "segments":    out["segments"],
+            "segments":    safe_segments,
         }
 
-    # Explicit source specified
+    # Explicit source specified:
     if effective_source == target_encoding:
         # No conversion needed
         return {
             "result":      text,
             "source_type": effective_source,
             "confidence":  confidence,
-            "segments":    [{"text": text, "type": effective_source, "converted": text}],
+            "segments":    [{"text": text[:500], "type": effective_source, "converted": text[:500]}],
         }
 
     if effective_source == "mixed":
         out = convert_mixed_text(text, target=target_encoding)
+        raw_segments = out.get("segments", [])
+        safe_segments = raw_segments[:100] if len(raw_segments) > 100 else raw_segments
         return {
             "result":      out["result"],
             "source_type": "mixed",
             "confidence":  confidence,
-            "segments":    out["segments"],
+            "segments":    safe_segments,
         }
 
     if effective_source == "nudi" and target_encoding == "unicode":
@@ -194,13 +200,29 @@ def _run_conversion(
         "result":      converted,
         "source_type": effective_source,
         "confidence":  confidence,
-        "segments":    [{"text": text, "type": effective_source, "converted": converted}],
+        "segments":    [{"text": text[:500], "type": effective_source, "converted": converted[:500]}],
     }
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+@app.get(
+    "/",
+    summary="Root status",
+    tags=["Utility"],
+)
+async def root_status() -> dict[str, Any]:
+    """Root endpoint for Render health monitoring and status checks."""
+    return {
+        "status": "ok",
+        "service": "AnyFont to Nudi Converter API",
+        "version": "1.0.0",
+        "environment": ENVIRONMENT,
+        "docs": "/docs",
+    }
+
 
 @app.get(
     "/api/health",
